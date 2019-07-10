@@ -432,7 +432,7 @@ public class Worker implements Runnable {
      *            Name of the Kinesis application
      * @param recordProcessorFactory
      *            Used to get record processor instances for processing data from shards
-     * @paran config
+     * @param config
      *            Kinesis Library configuration
      * @param streamConfig
      *            Stream configuration
@@ -588,21 +588,22 @@ public class Worker implements Runnable {
     @VisibleForTesting
     void runProcessLoop() {
         try {
-            boolean foundCompletedShard = false;
-            Set<ShardInfo> assignedShards = new HashSet<>();
-            for (ShardInfo shardInfo : getShardInfoForAssignments()) {
-                ShardConsumer shardConsumer = createOrGetShardConsumer(shardInfo, recordProcessorFactory);
-                if (shardConsumer.isShutdown() && shardConsumer.getShutdownReason().equals(ShutdownReason.TERMINATE)) {
-                    foundCompletedShard = true;
-                } else {
-                    shardConsumer.consumeShard();
-                }
-                assignedShards.add(shardInfo);
-            }
+//            boolean foundCompletedShard = false;
+//            Set<ShardInfo> assignedShards = new HashSet<>();
+//            for (ShardInfo shardInfo : getShardInfoForAssignments()) {
+//                ShardConsumer shardConsumer = createOrGetShardConsumer(shardInfo, recordProcessorFactory);
+//                if (shardConsumer.isShutdown() && shardConsumer.getShutdownReason().equals(ShutdownReason.TERMINATE)) {
+//                    foundCompletedShard = true;
+//                } else {
+//                    shardConsumer.consumeShard();
+//                }
+//                assignedShards.add(shardInfo);
+//            }
 
-            if (foundCompletedShard) {
-                controlServer.syncShardAndLeaseInfo(null);
-            }
+//            if (foundCompletedShard) {
+
+            controlServer.syncShardAndLeaseInfo(null);
+//            }
 
             // clean up shard consumers for unassigned shards
             cleanupShardConsumers(assignedShards);
