@@ -606,7 +606,7 @@ public class Worker implements Runnable {
 //            }
 
             // clean up shard consumers for unassigned shards
-            cleanupShardConsumers(assignedShards);
+//            cleanupShardConsumers(assignedShards);
 
             wlog.info("Sleeping ...");
             Thread.sleep(idleTimeInMilliseconds);
