@@ -1224,7 +1224,7 @@ public class KinesisClientLibConfiguration {
      * @return KinesisClientLibConfiguration
      */
     public KinesisClientLibConfiguration withMaxLeasesForWorker(int maxLeasesForWorker) {
-        checkIsValuePositive("maxLeasesForWorker", maxLeasesForWorker);
+//        checkIsValuePositive("maxLeasesForWorker", maxLeasesForWorker);
         this.maxLeasesForWorker = maxLeasesForWorker;
         return this;
     }
