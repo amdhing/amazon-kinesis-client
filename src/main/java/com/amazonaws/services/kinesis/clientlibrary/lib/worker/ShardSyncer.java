@@ -374,16 +374,17 @@ class ShardSyncer {
         List<Shard> openShards = getOpenShards(shards);
         Map<String, Boolean> memoizationContext = new HashMap<>();
 
+        LOG.info("Evaluating leases...");
         // Iterate over the open shards and find those that don't have any lease entries.
         for (Shard shard : openShards) {
             String shardId = shard.getShardId();
-            LOG.info("Evaluating leases for open shard " + shardId + " and its ancestors.");
+            LOG.debug("Evaluating leases for open shard " + shardId + " and its ancestors.");
             if (shardIdsOfCurrentLeases.contains(shardId)) {
-                LOG.info("Lease for shardId " + shardId + " already exists. Not creating a lease");
+                LOG.debug("Lease for shardId " + shardId + " already exists. Not creating a lease");
             } else if (inconsistentShardIds.contains(shardId)) {
-                LOG.info("shardId " + shardId + " is an inconsistent child.  Not creating a lease");
+                LOG.debug("shardId " + shardId + " is an inconsistent child.  Not creating a lease");
             } else {
-                LOG.info("Need to create a lease for shardId " + shardId);
+                LOG.debug("Need to create a lease for shardId " + shardId);
                 KinesisClientLease newLease = newKCLLease(shard);
                 boolean isDescendant =
                         checkIfDescendantAndAddNewLeasesForAncestors(shardId,
