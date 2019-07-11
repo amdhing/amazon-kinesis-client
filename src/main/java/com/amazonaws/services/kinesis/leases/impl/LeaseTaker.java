@@ -99,8 +99,8 @@ public class LeaseTaker<T extends Lease> implements ILeaseTaker<T> {
      * @return LeaseTaker
      */
     public LeaseTaker<T> withMaxLeasesForWorker(int maxLeasesForWorker) {
-        if (maxLeasesForWorker <= 0) {
-            throw new IllegalArgumentException("maxLeasesForWorker should be >= 1");
+        if (maxLeasesForWorker < 0) {
+            throw new IllegalArgumentException("maxLeasesForWorker should be >= 0");
         }
         this.maxLeasesForWorker = maxLeasesForWorker;
         return this;

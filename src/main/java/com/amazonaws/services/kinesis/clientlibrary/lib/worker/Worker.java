@@ -632,7 +632,7 @@ public class Worker implements Runnable {
                 LOG.info("Initialization attempt " + (i + 1));
                 LOG.info("Initializing LeaseCoordinator");
                 leaseCoordinator.initialize();
-                leaseCoordinator.stopLeaseTaker();
+
                 TaskResult result = null;
                 if (!skipShardSyncAtWorkerInitializationIfLeasesExist
                         || leaseCoordinator.getLeaseManager().isLeaseTableEmpty()) {
