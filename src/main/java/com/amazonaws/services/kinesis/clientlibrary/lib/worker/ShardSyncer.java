@@ -368,7 +368,7 @@ class ShardSyncer {
         Set<String> shardIdsOfCurrentLeases = new HashSet<String>();
         for (KinesisClientLease lease : currentLeases) {
             shardIdsOfCurrentLeases.add(lease.getLeaseKey());
-            LOG.info("Existing lease: " + lease);
+            LOG.debug("Existing lease: " + lease);
         }
 
         List<Shard> openShards = getOpenShards(shards);
