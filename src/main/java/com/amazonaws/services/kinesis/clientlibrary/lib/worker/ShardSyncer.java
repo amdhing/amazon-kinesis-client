@@ -110,7 +110,7 @@ class ShardSyncer {
             boolean ignoreUnexpectedChildShards)
             throws DependencyException, InvalidStateException, ProvisionedThroughputException, KinesisClientLibIOException {
         List<Shard> shards = getShardList(kinesisProxy);
-        LOG.debug("Num shards: " + shards.size());
+        LOG.info("Num shards: " + shards.size());
 
         Map<String, Shard> shardIdToShardMap = constructShardIdToShardMap(shards);
         Map<String, Set<String>> shardIdToChildShardIdsMap = constructShardIdToChildShardIdsMap(shardIdToShardMap);
@@ -123,7 +123,7 @@ class ShardSyncer {
 
         List<KinesisClientLease> newLeasesToCreate = determineNewLeasesToCreate(shards, currentLeases, initialPosition,
                 inconsistentShardIds);
-        LOG.debug("Num new leases to create: " + newLeasesToCreate.size());
+        LOG.info("Num new leases to create: " + newLeasesToCreate.size());
         for (KinesisClientLease lease : newLeasesToCreate) {
             long startTimeMillis = System.currentTimeMillis();
             boolean success = false;
@@ -368,7 +368,7 @@ class ShardSyncer {
         Set<String> shardIdsOfCurrentLeases = new HashSet<String>();
         for (KinesisClientLease lease : currentLeases) {
             shardIdsOfCurrentLeases.add(lease.getLeaseKey());
-            LOG.debug("Existing lease: " + lease);
+            LOG.info("Existing lease: " + lease);
         }
 
         List<Shard> openShards = getOpenShards(shards);
@@ -377,13 +377,13 @@ class ShardSyncer {
         // Iterate over the open shards and find those that don't have any lease entries.
         for (Shard shard : openShards) {
             String shardId = shard.getShardId();
-            LOG.debug("Evaluating leases for open shard " + shardId + " and its ancestors.");
+            LOG.info("Evaluating leases for open shard " + shardId + " and its ancestors.");
             if (shardIdsOfCurrentLeases.contains(shardId)) {
-                LOG.debug("Lease for shardId " + shardId + " already exists. Not creating a lease");
+                LOG.info("Lease for shardId " + shardId + " already exists. Not creating a lease");
             } else if (inconsistentShardIds.contains(shardId)) {
                 LOG.info("shardId " + shardId + " is an inconsistent child.  Not creating a lease");
             } else {
-                LOG.debug("Need to create a lease for shardId " + shardId);
+                LOG.info("Need to create a lease for shardId " + shardId);
                 KinesisClientLease newLease = newKCLLease(shard);
                 boolean isDescendant =
                         checkIfDescendantAndAddNewLeasesForAncestors(shardId,
