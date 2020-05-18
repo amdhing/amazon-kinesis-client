@@ -19,6 +19,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+import com.amazonaws.services.dynamodbv2.model.BillingMode;
+import com.amazonaws.services.kinesis.clientlibrary.lib.worker.KinesisClientLibConfiguration;
 import com.amazonaws.services.kinesis.leases.util.DynamoUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -61,16 +63,30 @@ public class LeaseManager<T extends Lease> implements ILeaseManager<T> {
     protected AmazonDynamoDB dynamoDBClient;
     protected ILeaseSerializer<T> serializer;
     protected boolean consistentReads;
+    private BillingMode billingMode;
 
     /**
      * Constructor.
-     * 
+     *
      * @param table leases table
      * @param dynamoDBClient DynamoDB client to use
      * @param serializer LeaseSerializer to use to convert to/from DynamoDB objects.
      */
+    @Deprecated
     public LeaseManager(String table, AmazonDynamoDB dynamoDBClient, ILeaseSerializer<T> serializer) {
-        this(table, dynamoDBClient, serializer, false);
+        this(table, dynamoDBClient, serializer, false, KinesisClientLibConfiguration.DEFAULT_DDB_BILLING_MODE);
+    }
+
+    /**
+     * Constructor.
+     *
+     * @param table leases table
+     * @param dynamoDBClient DynamoDB client to use
+     * @param serializer LeaseSerializer to use to convert to/from DynamoDB objects.
+     * @param billingMode The DDB Billing mode to set for lease table creation.
+     */
+    public LeaseManager(String table, AmazonDynamoDB dynamoDBClient, ILeaseSerializer<T> serializer, BillingMode billingMode) {
+        this(table, dynamoDBClient, serializer, false, billingMode);
     }
 
     /**
@@ -78,13 +94,14 @@ public class LeaseManager<T extends Lease> implements ILeaseManager<T> {
      * - our code is meant to be resilient to inconsistent reads. Using consistent reads during testing speeds up
      * execution of simple tests (you don't have to wait out the consistency window). Test cases that want to experience
      * eventual consistency should not set consistentReads=true.
-     * 
+     *
      * @param table leases table
      * @param dynamoDBClient DynamoDB client to use
      * @param serializer lease serializer to use
      * @param consistentReads true if we want consistent reads for testing purposes.
+     * @param billingMode The DDB Billing mode to set for lease table creation.
      */
-    public LeaseManager(String table, AmazonDynamoDB dynamoDBClient, ILeaseSerializer<T> serializer, boolean consistentReads) {
+    public LeaseManager(String table, AmazonDynamoDB dynamoDBClient, ILeaseSerializer<T> serializer, boolean consistentReads, BillingMode billingMode) {
         verifyNotNull(table, "Table name cannot be null");
         verifyNotNull(dynamoDBClient, "dynamoDBClient cannot be null");
         verifyNotNull(serializer, "ILeaseSerializer cannot be null");
@@ -93,6 +110,7 @@ public class LeaseManager<T extends Lease> implements ILeaseManager<T> {
         this.dynamoDBClient = dynamoDBClient;
         this.consistentReads = consistentReads;
         this.serializer = serializer;
+        this.billingMode=billingMode;
     }
 
     /**
@@ -118,11 +136,13 @@ public class LeaseManager<T extends Lease> implements ILeaseManager<T> {
         request.setTableName(table);
         request.setKeySchema(serializer.getKeySchema());
         request.setAttributeDefinitions(serializer.getAttributeDefinitions());
-
-        ProvisionedThroughput throughput = new ProvisionedThroughput();
-        throughput.setReadCapacityUnits(readCapacity);
-        throughput.setWriteCapacityUnits(writeCapacity);
-        request.setProvisionedThroughput(throughput);
+        request.setBillingMode(billingMode.name());
+        if(BillingMode.PROVISIONED.equals(billingMode)){
+            ProvisionedThroughput throughput = new ProvisionedThroughput();
+            throughput.setReadCapacityUnits(readCapacity);
+            throughput.setWriteCapacityUnits(writeCapacity);
+            request.setProvisionedThroughput(throughput);
+        }
 
         try {
             dynamoDBClient.createTable(request);
@@ -142,7 +162,8 @@ public class LeaseManager<T extends Lease> implements ILeaseManager<T> {
      */
     @Override
     public boolean leaseTableExists() throws DependencyException {
-        return TableStatus.ACTIVE == tableStatus();
+        TableStatus tableStatus = tableStatus();
+        return TableStatus.ACTIVE == tableStatus || TableStatus.UPDATING == tableStatus;
     }
 
     private TableStatus tableStatus() throws DependencyException {

@@ -14,6 +14,8 @@
  */
 package com.amazonaws.services.kinesis.leases.impl;
 
+import com.amazonaws.services.dynamodbv2.model.BillingMode;
+import com.amazonaws.services.kinesis.clientlibrary.lib.worker.KinesisClientLibConfiguration;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -34,12 +36,36 @@ public class KinesisClientLeaseManager extends LeaseManager<KinesisClientLease> 
 
     /**
      * Constructor.
+     *
+     * @param table Leases table
+     * @param dynamoDBClient DynamoDB client to use
+     */
+    @Deprecated
+    public KinesisClientLeaseManager(String table, AmazonDynamoDB dynamoDBClient) {
+        this(table, dynamoDBClient, false, KinesisClientLibConfiguration.DEFAULT_DDB_BILLING_MODE);
+    }
+
+    /**
+     * Constructor.
      * 
      * @param table Leases table
      * @param dynamoDBClient DynamoDB client to use
      */
-    public KinesisClientLeaseManager(String table, AmazonDynamoDB dynamoDBClient) {
-        this(table, dynamoDBClient, false);
+    public KinesisClientLeaseManager(String table, AmazonDynamoDB dynamoDBClient, BillingMode billingMode) {
+        this(table, dynamoDBClient, false, billingMode);
+    }
+
+    /**
+     * Constructor for integration tests - see comment on superclass for documentation on setting the consistentReads
+     * flag.
+     *
+     * @param table leases table
+     * @param dynamoDBClient DynamoDB client to use
+     * @param consistentReads true if we want consistent reads for testing purposes.
+     */
+    @Deprecated
+    public KinesisClientLeaseManager(String table, AmazonDynamoDB dynamoDBClient, boolean consistentReads) {
+        super(table, dynamoDBClient, new KinesisClientLeaseSerializer(), consistentReads, KinesisClientLibConfiguration.DEFAULT_DDB_BILLING_MODE);
     }
 
     /**
@@ -50,8 +76,8 @@ public class KinesisClientLeaseManager extends LeaseManager<KinesisClientLease> 
      * @param dynamoDBClient DynamoDB client to use
      * @param consistentReads true if we want consistent reads for testing purposes.
      */
-    public KinesisClientLeaseManager(String table, AmazonDynamoDB dynamoDBClient, boolean consistentReads) {
-        super(table, dynamoDBClient, new KinesisClientLeaseSerializer(), consistentReads);
+    public KinesisClientLeaseManager(String table, AmazonDynamoDB dynamoDBClient, boolean consistentReads, BillingMode billingMode) {
+        super(table, dynamoDBClient, new KinesisClientLeaseSerializer(), consistentReads, billingMode);
     }
 
     /**
