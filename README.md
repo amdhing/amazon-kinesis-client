@@ -31,12 +31,30 @@ To make it easier for developers to write record processors in other languages, 
 
 ## Release Notes
 
-### Latest Release (1.10.0 - April 8, 2019)
-[Milestone#31](https://github.com/awslabs/amazon-kinesis-client/milestone/31)
-* Updated License to [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0)
-  * [PR#522](https://github.com/awslabs/amazon-kinesis-client/pull/522)	
+#### Latest Release (1.13.3 March 2, 2020)
+* Refactoring shard closure verification performed by ShutdownTask.
+  * [PR #684] (https://github.com/awslabs/amazon-kinesis-client/pull/684)
+* Fixing the bug in ShardSyncTaskManager to resolve the issue of new shards not being processed after resharding.
+  * [PR #694] (https://github.com/awslabs/amazon-kinesis-client/pull/694)
 
-### For remaining release notes check **[CHANGELOG.md][changelog-md]**.
+#### Release (1.13.2 Janurary 13, 2020)
+* Adding backward compatible constructors that use the default DDB Billing Mode (#673)
+  * [PR #673](https://github.com/awslabs/amazon-kinesis-client/pull/673)
+
+#### Release (1.13.1 December 30, 2019)
+* Adding BillingMode Support to KCL 1.x. This enables the customer to specify if they want provisioned capacity for DDB, or pay per request.
+  * [PR #656](https://github.com/awslabs/amazon-kinesis-client/pull/656)
+* Ensure ShardSyncTask invocation from ShardSyncTaskManager for pending ShardEnd events.
+  * [PR #659](https://github.com/awslabs/amazon-kinesis-client/pull/659)
+* Fix the LeaseManagementIntegrationTest failure.
+  * [PR #670](https://github.com/awslabs/amazon-kinesis-client/pull/670)
+
+#### Release (1.13.0 November 5, 2019)
+* Handling completed and blocked tasks better during graceful shutdown
+  * [PR #640](https://github.com/awslabs/amazon-kinesis-client/pull/640)
+
+
+###### For remaining release notes check **[CHANGELOG.md][changelog-md]**.
 
 [kinesis]: http://aws.amazon.com/kinesis
 [kinesis-forum]: http://developer.amazonwebservices.com/connect/forum.jspa?forumID=169

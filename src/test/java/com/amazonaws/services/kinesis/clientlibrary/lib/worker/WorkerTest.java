@@ -161,7 +161,7 @@ public class WorkerTest {
 
     private RecordsFetcherFactory recordsFetcherFactory;
     private KinesisClientLibConfiguration config;
-    private ShardSyncer shardSyncer = new ShardSyncer(new KinesisLeaseCleanupValidator());
+    private KinesisShardSyncer shardSyncer = new KinesisShardSyncer(new KinesisLeaseCleanupValidator());
 
     @Mock
     private KinesisClientLibLeaseCoordinator leaseCoordinator;
@@ -189,6 +189,8 @@ public class WorkerTest {
     private TaskResult taskResult;
     @Mock
     private WorkerStateChangeListener workerStateChangeListener;
+    @Mock
+    private ShardSyncStrategy shardSyncStrategy;
 
     @Before
     public void setup() {
@@ -521,7 +523,7 @@ public class WorkerTest {
         final int threadPoolSize = 2;
         final int numberOfRecordsPerShard = 10;
         List<Shard> shardList = createShardListWithOneSplit();
-        List<KinesisClientLease> initialLeases = new ArrayList<KinesisClientLease>();
+        List<KinesisClientLease> initialLeases = new ArrayList<>();
         KinesisClientLease lease = shardSyncer.newKCLLease(shardList.get(0));
         lease.setCheckpoint(new ExtendedSequenceNumber("2"));
         initialLeases.add(lease);
@@ -1094,6 +1096,63 @@ public class WorkerTest {
 
         assertThat(worker.shouldShutdown(), equalTo(true));
 
+    }
+
+    private String randomShardId() {
+        return UUID.randomUUID().toString();
+    }
+
+    @Test
+    public void testShutdownDoesNotBlockOnCompletedLeases() throws Exception {
+        final String shardId = randomShardId();
+        final String parentShardId = randomShardId();
+        final KinesisClientLease completedLease = mock(KinesisClientLease.class);
+        when(completedLease.getLeaseKey()).thenReturn(shardId);
+        when(completedLease.getParentShardIds()).thenReturn(Collections.singleton(parentShardId));
+        when(completedLease.getCheckpoint()).thenReturn(ExtendedSequenceNumber.SHARD_END);
+        when(completedLease.getConcurrencyToken()).thenReturn(UUID.randomUUID());
+        final StreamConfig streamConfig = mock(StreamConfig.class);
+        final IMetricsFactory metricsFactory = mock(IMetricsFactory.class);
+        final List<KinesisClientLease> leases = Collections.singletonList(completedLease);
+        final List<ShardInfo> currentAssignments = new ArrayList<>();
+
+        when(leaseCoordinator.getAssignments()).thenAnswer((Answer<List<KinesisClientLease>>) invocation -> leases);
+        when(leaseCoordinator.getCurrentAssignments()).thenAnswer((Answer<List<ShardInfo>>) invocation -> currentAssignments);
+
+        final IRecordProcessorFactory recordProcessorFactory = mock(IRecordProcessorFactory.class);
+        final IRecordProcessor processor = mock(IRecordProcessor.class);
+        when(recordProcessorFactory.createProcessor()).thenReturn(processor);
+
+        Worker worker = new Worker("testShutdownWithCompletedLeases",
+                recordProcessorFactory,
+                config,
+                streamConfig,
+                INITIAL_POSITION_TRIM_HORIZON,
+                parentShardPollIntervalMillis,
+                shardSyncIntervalMillis,
+                cleanupLeasesUponShardCompletion,
+                leaseCoordinator,
+                leaseCoordinator,
+                executorService,
+                metricsFactory,
+                taskBackoffTimeMillis,
+                failoverTimeMillis,
+                false,
+                shardPrioritization);
+
+        final Map<ShardInfo, ShardConsumer> shardInfoShardConsumerMap = worker.getShardInfoShardConsumerMap();
+        final ShardInfo completedShardInfo = KinesisClientLibLeaseCoordinator.convertLeaseToAssignment(completedLease);
+        final ShardConsumer completedShardConsumer = mock(ShardConsumer.class);
+        shardInfoShardConsumerMap.put(completedShardInfo, completedShardConsumer);
+        when(completedShardConsumer.getCurrentState()).thenReturn(ConsumerStates.ShardConsumerState.SHUTDOWN_COMPLETE);
+
+        Callable<GracefulShutdownContext> callable = worker.createWorkerShutdownCallable();
+        assertThat(worker.hasGracefulShutdownStarted(), equalTo(false));
+
+        GracefulShutdownContext gracefulShutdownContext = callable.call();
+        assertThat(gracefulShutdownContext.getShutdownCompleteLatch().getCount(), equalTo(0L));
+        assertThat(gracefulShutdownContext.getNotificationCompleteLatch().getCount(), equalTo(0L));
+        assertThat(worker.hasGracefulShutdownStarted(), equalTo(true));
     }
 
     @Test
@@ -2074,7 +2133,8 @@ public class WorkerTest {
         final long idleTimeInMilliseconds = 2L;
 
         AmazonDynamoDB ddbClient = DynamoDBEmbedded.create().amazonDynamoDB();
-        LeaseManager<KinesisClientLease> leaseManager = new KinesisClientLeaseManager("foo", ddbClient);
+        LeaseManager<KinesisClientLease> leaseManager = new KinesisClientLeaseManager("foo", ddbClient,
+                KinesisClientLibConfiguration.DEFAULT_DDB_BILLING_MODE);
         leaseManager.createLeaseTableIfNotExists(1L, 1L);
         for (KinesisClientLease initialLease : initialLeases) {
             leaseManager.createLeaseIfNotExists(initialLease);

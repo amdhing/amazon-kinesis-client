@@ -18,11 +18,11 @@ import java.util.Date;
 import java.util.Optional;
 import java.util.Set;
 
+import com.amazonaws.services.dynamodbv2.model.BillingMode;
 import org.apache.commons.lang3.Validate;
 
 import com.amazonaws.ClientConfiguration;
 import com.amazonaws.auth.AWSCredentialsProvider;
-import com.amazonaws.regions.RegionUtils;
 import com.amazonaws.services.kinesis.metrics.impl.MetricsHelper;
 import com.amazonaws.services.kinesis.metrics.interfaces.IMetricsScope;
 import com.amazonaws.services.kinesis.metrics.interfaces.MetricsLevel;
@@ -42,7 +42,10 @@ public class KinesisClientLibConfiguration {
      * when the application starts for the first time and there is no checkpoint for the shard.
      */
     public static final InitialPositionInStream DEFAULT_INITIAL_POSITION_IN_STREAM = InitialPositionInStream.LATEST;
-
+    /**
+     * Default Billing mode for DDB when we need to create a new lease table. Default value is Provisioned which requires the customer to manage the IOPS on the lease table.
+     */
+    public static final BillingMode DEFAULT_DDB_BILLING_MODE = BillingMode.PROVISIONED;
     /**
      * Fail over time in milliseconds. A worker which does not renew it's lease within this time interval
      * will be regarded as having problems and it's shards will be assigned to other workers.
@@ -126,7 +129,7 @@ public class KinesisClientLibConfiguration {
     /**
      * User agent set when Amazon Kinesis Client Library makes AWS requests.
      */
-    public static final String KINESIS_CLIENT_LIB_USER_AGENT = "amazon-kinesis-client-library-java-1.10.1-SNAPSHOT";
+    public static final String KINESIS_CLIENT_LIB_USER_AGENT = "amazon-kinesis-client-library-java-1.13.4-SNAPSHOT";
 
     /**
      * KCL will validate client provided sequence numbers with a call to Amazon Kinesis before checkpointing for calls
@@ -168,6 +171,11 @@ public class KinesisClientLibConfiguration {
     public static final boolean DEFAULT_SKIP_SHARD_SYNC_AT_STARTUP_IF_LEASES_EXIST = false;
 
     /**
+     * Default ShardSyncStrategy to be used for discovering new shards in the Stream.
+     */
+    public static final ShardSyncStrategyType DEFAULT_SHARD_SYNC_STRATEGY_TYPE = ShardSyncStrategyType.SHARD_END;
+
+    /**
      * Default Shard prioritization strategy.
      */
     public static final ShardPrioritization DEFAULT_SHARD_PRIORITIZATION = new NoOpShardPrioritization();
@@ -192,6 +200,8 @@ public class KinesisClientLibConfiguration {
      */
     public static final int DEFAULT_MAX_LIST_SHARDS_RETRY_ATTEMPTS = 50;
 
+    @Getter
+    private BillingMode billingMode;
     private String applicationName;
     private String tableName;
     private String streamName;
@@ -230,6 +240,7 @@ public class KinesisClientLibConfiguration {
     private boolean skipShardSyncAtWorkerInitializationIfLeasesExist;
     private ShardPrioritization shardPrioritization;
     private long shutdownGraceMillis;
+    private ShardSyncStrategyType shardSyncStrategyType;
 
     @Getter
     private Optional<Integer> timeoutInSeconds = Optional.empty();
@@ -314,7 +325,7 @@ public class KinesisClientLibConfiguration {
                 DEFAULT_METRICS_MAX_QUEUE_SIZE,
                 DEFAULT_VALIDATE_SEQUENCE_NUMBER_BEFORE_CHECKPOINTING,
                 null,
-                DEFAULT_SHUTDOWN_GRACE_MILLIS);
+                DEFAULT_SHUTDOWN_GRACE_MILLIS, DEFAULT_DDB_BILLING_MODE);
     }
 
     /**
@@ -350,6 +361,7 @@ public class KinesisClientLibConfiguration {
      *        {@link RecordProcessorCheckpointer#checkpoint(String)}
      * @param regionName The region name for the service
      * @param shutdownGraceMillis The number of milliseconds before graceful shutdown terminates forcefully
+     * @param billingMode The DDB Billing mode to set for lease table creation.
      */
     // CHECKSTYLE:IGNORE HiddenFieldCheck FOR NEXT 26 LINES
     // CHECKSTYLE:IGNORE ParameterNumber FOR NEXT 26 LINES
@@ -376,7 +388,7 @@ public class KinesisClientLibConfiguration {
                                          int metricsMaxQueueSize,
                                          boolean validateSequenceNumberBeforeCheckpointing,
                                          String regionName,
-                                         long shutdownGraceMillis) {
+                                         long shutdownGraceMillis, BillingMode billingMode) {
         this(applicationName, streamName, kinesisEndpoint, null, initialPositionInStream, kinesisCredentialsProvider,
                 dynamoDBCredentialsProvider, cloudWatchCredentialsProvider, failoverTimeMillis, workerId,
                 maxRecords, idleTimeBetweenReadsInMillis,
@@ -384,7 +396,7 @@ public class KinesisClientLibConfiguration {
                 shardSyncIntervalMillis, cleanupTerminatedShardsBeforeExpiry,
                 kinesisClientConfig, dynamoDBClientConfig, cloudWatchClientConfig,
                 taskBackoffTimeMillis, metricsBufferTimeMillis, metricsMaxQueueSize,
-                validateSequenceNumberBeforeCheckpointing, regionName, shutdownGraceMillis);
+                validateSequenceNumberBeforeCheckpointing, regionName, shutdownGraceMillis, billingMode);
     }
 
     /**
@@ -420,6 +432,7 @@ public class KinesisClientLibConfiguration {
      *        with a call to Amazon Kinesis before checkpointing for calls to
      *        {@link RecordProcessorCheckpointer#checkpoint(String)}
      * @param regionName The region name for the service
+     * @param billingMode The DDB Billing mode to set for lease table creation.
      */
     // CHECKSTYLE:IGNORE HiddenFieldCheck FOR NEXT 26 LINES
     // CHECKSTYLE:IGNORE ParameterNumber FOR NEXT 26 LINES
@@ -447,7 +460,8 @@ public class KinesisClientLibConfiguration {
                                          int metricsMaxQueueSize,
                                          boolean validateSequenceNumberBeforeCheckpointing,
                                          String regionName,
-                                         long shutdownGraceMillis) {
+                                         long shutdownGraceMillis,
+                                         BillingMode billingMode) {
         // Check following values are greater than zero
         checkIsValuePositive("FailoverTimeMillis", failoverTimeMillis);
         checkIsValuePositive("IdleTimeBetweenReadsInMillis", idleTimeBetweenReadsInMillis);
@@ -492,8 +506,10 @@ public class KinesisClientLibConfiguration {
         this.initialPositionInStreamExtended =
                 InitialPositionInStreamExtended.newInitialPosition(initialPositionInStream);
         this.skipShardSyncAtWorkerInitializationIfLeasesExist = DEFAULT_SKIP_SHARD_SYNC_AT_STARTUP_IF_LEASES_EXIST;
+        this.shardSyncStrategyType = DEFAULT_SHARD_SYNC_STRATEGY_TYPE;
         this.shardPrioritization = DEFAULT_SHARD_PRIORITIZATION;
         this.recordsFetcherFactory = new SimpleRecordsFetcherFactory();
+        this.billingMode = billingMode;
     }
 
     /**
@@ -600,6 +616,7 @@ public class KinesisClientLibConfiguration {
         this.initialPositionInStreamExtended =
                 InitialPositionInStreamExtended.newInitialPosition(initialPositionInStream);
         this.skipShardSyncAtWorkerInitializationIfLeasesExist = DEFAULT_SKIP_SHARD_SYNC_AT_STARTUP_IF_LEASES_EXIST;
+        this.shardSyncStrategyType = DEFAULT_SHARD_SYNC_STRATEGY_TYPE;
         this.shardPrioritization = DEFAULT_SHARD_PRIORITIZATION;
         this.recordsFetcherFactory = recordsFetcherFactory;
         this.shutdownGraceMillis = shutdownGraceMillis;
@@ -838,6 +855,13 @@ public class KinesisClientLibConfiguration {
      */
     public boolean getSkipShardSyncAtWorkerInitializationIfLeasesExist() {
         return skipShardSyncAtWorkerInitializationIfLeasesExist;
+    }
+
+    /**
+     * @return ShardSyncStrategyType to be used by KCL to process the Stream.
+     */
+    public ShardSyncStrategyType getShardSyncStrategyType() {
+        return shardSyncStrategyType;
     }
 
     /**
@@ -1141,6 +1165,15 @@ public class KinesisClientLibConfiguration {
     }
 
     /**
+     * The DDB Billing mode to set for lease table creation.
+     * @param billingMode - Either PAY_PER_REQUEST, or PROVISIONED; Defaults to PROVISIONED
+     * @return
+     */
+    public KinesisClientLibConfiguration withBillingMode(BillingMode billingMode){
+        this.billingMode = billingMode == null ? DEFAULT_DDB_BILLING_MODE : billingMode;
+        return this;
+    }
+    /**
      * Sets metrics level that should be enabled. Possible values are:
      * NONE
      * SUMMARY
@@ -1196,6 +1229,15 @@ public class KinesisClientLibConfiguration {
     public KinesisClientLibConfiguration withSkipShardSyncAtStartupIfLeasesExist(
             boolean skipShardSyncAtStartupIfLeasesExist) {
         this.skipShardSyncAtWorkerInitializationIfLeasesExist = skipShardSyncAtStartupIfLeasesExist;
+        return this;
+    }
+
+    /**
+     * @param shardSyncStrategyType ShardSyncStrategy type for KCL.
+     * @return {@link KinesisClientLibConfiguration}
+     */
+    public KinesisClientLibConfiguration withShardSyncStrategyType(ShardSyncStrategyType shardSyncStrategyType) {
+        this.shardSyncStrategyType = shardSyncStrategyType;
         return this;
     }
 

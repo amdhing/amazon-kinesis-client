@@ -50,7 +50,7 @@ class ShardConsumer {
     private final ShardInfo shardInfo;
     private final KinesisDataFetcher dataFetcher;
     private final IMetricsFactory metricsFactory;
-    private final ILeaseManager<KinesisClientLease> leaseManager;
+    private final KinesisClientLibLeaseCoordinator leaseCoordinator;
     private ICheckpoint checkpoint;
     // Backoff time when polling to check if application has finished processing parent shards
     private final long parentShardPollIntervalMillis;
@@ -64,6 +64,7 @@ class ShardConsumer {
     private ITask currentTask;
     private long currentTaskSubmitTime;
     private Future<TaskResult> future;
+    private ShardSyncStrategy shardSyncStrategy;
 
     @Getter
     private final GetRecordsCache getRecordsCache;
@@ -97,7 +98,7 @@ class ShardConsumer {
      * @param checkpoint Checkpoint tracker
      * @param recordProcessor Record processor used to process the data records for the shard
      * @param config Kinesis library configuration
-     * @param leaseManager Used to create leases for new shards
+     * @param leaseCoordinator Used to manage leases for current worker
      * @param parentShardPollIntervalMillis Wait for this long if parent shards are not done (or we get an exception)
      * @param executorService ExecutorService used to execute process tasks for this shard
      * @param metricsFactory IMetricsFactory used to construct IMetricsScopes for this shard
@@ -109,20 +110,19 @@ class ShardConsumer {
             StreamConfig streamConfig,
             ICheckpoint checkpoint,
             IRecordProcessor recordProcessor,
-            ILeaseManager<KinesisClientLease> leaseManager,
+            KinesisClientLibLeaseCoordinator leaseCoordinator,
             long parentShardPollIntervalMillis,
             boolean cleanupLeasesOfCompletedShards,
             ExecutorService executorService,
             IMetricsFactory metricsFactory,
             long backoffTimeMillis,
             boolean skipShardSyncAtWorkerInitializationIfLeasesExist,
-            KinesisClientLibConfiguration config,
-            ShardSyncer shardSyncer) {
+            KinesisClientLibConfiguration config, ShardSyncer shardSyncer, ShardSyncStrategy shardSyncStrategy) {
         this(shardInfo,
                 streamConfig,
                 checkpoint,
                 recordProcessor,
-                leaseManager,
+                leaseCoordinator,
                 parentShardPollIntervalMillis,
                 cleanupLeasesOfCompletedShards,
                 executorService,
@@ -131,8 +131,7 @@ class ShardConsumer {
                 skipShardSyncAtWorkerInitializationIfLeasesExist,
                 Optional.empty(),
                 Optional.empty(),
-                config,
-                shardSyncer);
+                config, shardSyncer, shardSyncStrategy);
     }
 
     /**
@@ -140,7 +139,7 @@ class ShardConsumer {
      * @param streamConfig Stream configuration to use
      * @param checkpoint Checkpoint tracker
      * @param recordProcessor Record processor used to process the data records for the shard
-     * @param leaseManager Used to create leases for new shards
+     * @param leaseCoordinator Used to manage leases for current worker
      * @param parentShardPollIntervalMillis Wait for this long if parent shards are not done (or we get an exception)
      * @param executorService ExecutorService used to execute process tasks for this shard
      * @param metricsFactory IMetricsFactory used to construct IMetricsScopes for this shard
@@ -155,7 +154,7 @@ class ShardConsumer {
             StreamConfig streamConfig,
             ICheckpoint checkpoint,
             IRecordProcessor recordProcessor,
-            ILeaseManager<KinesisClientLease> leaseManager,
+            KinesisClientLibLeaseCoordinator leaseCoordinator,
             long parentShardPollIntervalMillis,
             boolean cleanupLeasesOfCompletedShards,
             ExecutorService executorService,
@@ -164,9 +163,7 @@ class ShardConsumer {
             boolean skipShardSyncAtWorkerInitializationIfLeasesExist,
             Optional<Integer> retryGetRecordsInSeconds,
             Optional<Integer> maxGetRecordsThreadPool,
-            KinesisClientLibConfiguration config,
-            ShardSyncer shardSyncer) {
-
+            KinesisClientLibConfiguration config, ShardSyncer shardSyncer, ShardSyncStrategy shardSyncStrategy) {
         this(
                 shardInfo,
                 streamConfig,
@@ -180,7 +177,7 @@ class ShardConsumer {
                                 shardInfo.getShardId(),
                                 streamConfig.shouldValidateSequenceNumberBeforeCheckpointing()),
                         metricsFactory),
-                leaseManager,
+                leaseCoordinator,
                 parentShardPollIntervalMillis,
                 cleanupLeasesOfCompletedShards,
                 executorService,
@@ -190,8 +187,7 @@ class ShardConsumer {
                 new KinesisDataFetcher(streamConfig.getStreamProxy(), shardInfo),
                 retryGetRecordsInSeconds,
                 maxGetRecordsThreadPool,
-                config,
-                shardSyncer
+                config, shardSyncer, shardSyncStrategy
         );
     }
 
@@ -201,7 +197,7 @@ class ShardConsumer {
      * @param checkpoint Checkpoint tracker
      * @param recordProcessor Record processor used to process the data records for the shard
      * @param recordProcessorCheckpointer RecordProcessorCheckpointer to use to checkpoint progress
-     * @param leaseManager Used to create leases for new shards
+     * @param leaseCoordinator Used to manage leases for current worker
      * @param parentShardPollIntervalMillis Wait for this long if parent shards are not done (or we get an exception)
      * @param cleanupLeasesOfCompletedShards  clean up the leases of completed shards
      * @param executorService ExecutorService used to execute process tasks for this shard
@@ -219,7 +215,7 @@ class ShardConsumer {
             ICheckpoint checkpoint,
             IRecordProcessor recordProcessor,
             RecordProcessorCheckpointer recordProcessorCheckpointer,
-            ILeaseManager<KinesisClientLease> leaseManager,
+            KinesisClientLibLeaseCoordinator leaseCoordinator,
             long parentShardPollIntervalMillis,
             boolean cleanupLeasesOfCompletedShards,
             ExecutorService executorService,
@@ -229,14 +225,13 @@ class ShardConsumer {
             KinesisDataFetcher kinesisDataFetcher,
             Optional<Integer> retryGetRecordsInSeconds,
             Optional<Integer> maxGetRecordsThreadPool,
-            KinesisClientLibConfiguration config,
-            ShardSyncer shardSyncer) {
+            KinesisClientLibConfiguration config, ShardSyncer shardSyncer, ShardSyncStrategy shardSyncStrategy) {
         this.shardInfo = shardInfo;
         this.streamConfig = streamConfig;
         this.checkpoint = checkpoint;
         this.recordProcessor = recordProcessor;
         this.recordProcessorCheckpointer = recordProcessorCheckpointer;
-        this.leaseManager = leaseManager;
+        this.leaseCoordinator = leaseCoordinator;
         this.parentShardPollIntervalMillis = parentShardPollIntervalMillis;
         this.cleanupLeasesOfCompletedShards = cleanupLeasesOfCompletedShards;
         this.executorService = executorService;
@@ -249,6 +244,7 @@ class ShardConsumer {
                 makeStrategy(this.dataFetcher, retryGetRecordsInSeconds, maxGetRecordsThreadPool, this.shardInfo),
                 this.getShardInfo().getShardId(), this.metricsFactory, this.config.getMaxRecords());
         this.shardSyncer = shardSyncer;
+        this.shardSyncStrategy = shardSyncStrategy;
     }
 
     /**
@@ -427,6 +423,8 @@ class ShardConsumer {
         }
         if (isShutdownRequested() && taskOutcome != TaskOutcome.FAILURE) {
             currentState = currentState.shutdownTransition(shutdownReason);
+        } else if (isShutdownRequested() && ConsumerStates.ShardConsumerState.WAITING_ON_PARENT_SHARDS.equals(currentState.getState())) {
+            currentState = currentState.shutdownTransition(shutdownReason);
         } else if (taskOutcome == TaskOutcome.SUCCESSFUL) {
             if (currentState.getTaskType() == currentTask.getTaskType()) {
                 currentState = currentState.successTransition();
@@ -482,7 +480,11 @@ class ShardConsumer {
     }
 
     ILeaseManager<KinesisClientLease> getLeaseManager() {
-        return leaseManager;
+        return leaseCoordinator.getLeaseManager();
+    }
+
+    KinesisClientLibLeaseCoordinator getLeaseCoordinator() {
+        return leaseCoordinator;
     }
 
     ICheckpoint getCheckpoint() {
@@ -511,5 +513,9 @@ class ShardConsumer {
 
     ShutdownNotification getShutdownNotification() {
         return shutdownNotification;
+    }
+
+    ShardSyncStrategy getShardSyncStrategy() {
+        return shardSyncStrategy;
     }
 }
